@@ -1,34 +1,36 @@
-module synch_fifi #(
+module synch_fifo #(
     parameter WIDTH = 64,
-    parameter DEPTH = 16
+    parameter DEPTH = 16,
+    localparam PTR_W = $clog2(DEPTH) - 1,
+    localparam CNT_W = PTR_W + 1
 )(
-    logic input clk,
-    logic input rst_n,
+    input logic clk,
+    input logic rst,
 
     //Write side signals
-    logic input s_valid,
-    logic input [WIDTH - 1 : 0] s_data,
+    input logic s_valid,
+    input logic [WIDTH - 1 : 0] s_data,
 
     //read side ready flag
-    logic input m_ready,
+    input logic m_ready,
 
     //write side ready flag
-    logic output s_ready,
+    output logic s_ready,
 
     //read side signals
-    logic output m_valid,
-    logic output [WIDTH - 1 : 0] m_data,
+    output logic m_valid,
+    output logic [WIDTH - 1 : 0] m_data,
 
     //count register
-    logic output [$clog2(DEPTH) : 0] count
+    output logic [CNT_W : 0] count
 
 );
 
     logic [WIDTH - 1 : 0] mem_array [DEPTH - 1 : 0];
-    logic [$clog2(DEPTH) -1 : 0] wr_ptr;
-    logic [$clog2(DEPTH) -1 : 0] rd_ptr;
-    logic [$clog2(DEPTH) -1 : 0] wr_ptr_next;
-    logic [$clog2(DEPTH) -1 : 0] rd_ptr_next;
+    logic [PTR_W : 0] wr_ptr_q;
+    logic [PTR_W : 0] rd_ptr_q;
+    logic [PTR_W : 0] wr_ptr_d;
+    logic [PTR_W : 0] rd_ptr_d;
 
     //Write side handshake
     assign s_ready = count != DEPTH;
@@ -44,62 +46,54 @@ module synch_fifi #(
     assign handshake = {write_handshake, read_handshake};
 
     //count next 
-    logic [$clog2(DEPTH) : 0] count_next;
+    logic [CNT_W : 0] count_d;
 
     //Oldest data inside FIFO gets read
-    assign m_data = mem_array[rd_ptr];
+    assign m_data = mem_array[rd_ptr_q];
 
-    //only read out the data if handshake is valid
     always_comb begin
-
+        wr_ptr_d = wr_ptr_q;
+        rd_ptr_d = rd_ptr_q;
+        count_d = count;
         case (handshake)
             //read
             2'b01 : begin
-                rd_ptr_next = rd_ptr + 1;
-                count_next = count - 1;
+                rd_ptr_d = rd_ptr_q + 1'b1;
+                count_d = count - 1'b1;
             end
 
             //write
             2'b10 : begin
-                wr_ptr_next = wr_ptr + 1;
-                count_next = count + 1;
+                wr_ptr_d = wr_ptr_q + 1'b1;
+                count_d = count + 1'b1;
             end
 
             //both - just dont update the count
             2'b11 : begin
-                rd_ptr_next = rd_ptr + 1;
-                m_data = mem_array[rd_ptr];
-                wr_ptr_next = wr_ptr + 1;
-                count_next = count;
+                rd_ptr_d = rd_ptr_q + 1'b1;
+                wr_ptr_d = wr_ptr_q + 1'b1;
             end
 
-            default : begin
-                wr_ptr_next = wr_ptr;
-                rd_ptr_next = rd_ptr;
-                count_next = count;
-                m_data = 0;
-            end
         endcase
 
     end
 
+    //control signal sequential block
     always_ff @ (posedge clk) begin
-        if (!rst_n) begin
+        if (rst) begin
             count <= 0;
-        end else if (write_handshake || read_handshake) begin
-            if (write_handshake) begin
-                //update memory array, write pointer and count
-                mem_array[wr_ptr] <= s_data;
-                wr_ptr <= wr_ptr_next;
-                count <= count_next;
-            end
-
-            if (read_handshake) begin
-                //update the read poitner and count
-                rd_ptr <= rd_ptr_next;
-                count <= count_next;
-            end
+            wr_ptr_q <= 0;
+            rd_ptr_q <= 0;
+        end else  begin
+            count <= count_d;
+            wr_ptr_q <= wr_ptr_d;
+            rd_ptr_q <= rd_ptr_d;
         end 
+    end
+
+    //memory reset free sequential block
+    always_ff @(posedge clk) begin
+        if (write_handshake) mem_array[wr_ptr_q] <= s_data;
     end
 
 
