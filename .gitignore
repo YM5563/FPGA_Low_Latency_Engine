@@ -1,0 +1,11 @@
+xcelium.d/
+*.shm
+*.log
+*.key
+*.history
+*.vcd
+xcelium.d/
+xrun.log
+xrun.history
+xrun.key
+*.shm

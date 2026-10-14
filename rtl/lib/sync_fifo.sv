@@ -1,7 +1,7 @@
-module synch_fifo #(
+module sync_fifo #(
     parameter WIDTH = 64,
     parameter DEPTH = 16,
-    localparam PTR_W = $clog2(DEPTH) - 1,
+    localparam PTR_W = $clog2(DEPTH),
     localparam CNT_W = PTR_W + 1
 )(
     input logic clk,
@@ -22,15 +22,21 @@ module synch_fifo #(
     output logic [WIDTH - 1 : 0] m_data,
 
     //count register
-    output logic [CNT_W : 0] count
+    output logic [CNT_W - 1: 0] count
 
 );
 
+    //pointer registers
     logic [WIDTH - 1 : 0] mem_array [DEPTH - 1 : 0];
-    logic [PTR_W : 0] wr_ptr_q;
-    logic [PTR_W : 0] rd_ptr_q;
-    logic [PTR_W : 0] wr_ptr_d;
-    logic [PTR_W : 0] rd_ptr_d;
+    logic [PTR_W - 1: 0] wr_ptr_q;
+    logic [PTR_W - 1: 0] rd_ptr_q;
+    logic [PTR_W - 1: 0] wr_ptr_d;
+    logic [PTR_W - 1: 0] rd_ptr_d;
+
+    //count registers 
+    logic [CNT_W - 1: 0] count_q;
+    logic [CNT_W - 1: 0] count_d;
+    assign count = count_q;
 
     //Write side handshake
     assign s_ready = count != DEPTH;
@@ -38,15 +44,12 @@ module synch_fifo #(
     assign write_handshake = s_ready && s_valid;
 
     //read side handshake
-    assign m_valid  = count != 0;
+    assign m_valid  = count_q != 0;
     logic read_handshake;
     assign read_handshake = m_valid && m_ready;
 
     logic [1:0] handshake;
     assign handshake = {write_handshake, read_handshake};
-
-    //count next 
-    logic [CNT_W : 0] count_d;
 
     //Oldest data inside FIFO gets read
     assign m_data = mem_array[rd_ptr_q];
@@ -54,18 +57,18 @@ module synch_fifo #(
     always_comb begin
         wr_ptr_d = wr_ptr_q;
         rd_ptr_d = rd_ptr_q;
-        count_d = count;
+        count_d = count_q;
         case (handshake)
             //read
             2'b01 : begin
                 rd_ptr_d = rd_ptr_q + 1'b1;
-                count_d = count - 1'b1;
+                count_d = count_q - 1'b1;
             end
 
             //write
             2'b10 : begin
                 wr_ptr_d = wr_ptr_q + 1'b1;
-                count_d = count + 1'b1;
+                count_d = count_q + 1'b1;
             end
 
             //both - just dont update the count
@@ -81,11 +84,11 @@ module synch_fifo #(
     //control signal sequential block
     always_ff @ (posedge clk) begin
         if (rst) begin
-            count <= 0;
+            count_q <= 0;
             wr_ptr_q <= 0;
             rd_ptr_q <= 0;
         end else  begin
-            count <= count_d;
+            count_q <= count_d;
             wr_ptr_q <= wr_ptr_d;
             rd_ptr_q <= rd_ptr_d;
         end 

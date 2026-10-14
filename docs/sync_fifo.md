@@ -10,7 +10,7 @@ Interface:
 **Parameters:**
 - Width = 64bits
 - Depth = 16
-Depth is power 2 so no wrap around logic is needed for pointers
+Depth must be a power of 2, this is not checked at elaboration. 
 
 **Full/Empty Ambiguity**
 Fixed by the count register:
